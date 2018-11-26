@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Starcraft II statistics</title>
+    <!-- Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="html/charthelper.js"></script>
+    <style>
+        p { font-family: sans-serif; }
+
+    </style>
+</head>
+<body>
+<div style="width: 80em; margin: auto">
+    <h3>Summary</h3>
+    <p>I have scraped data from the SC2 API and then generated some graphs.
+
+    <h3>Background</h3>
+    <p>Balance is a constant discussion point in SC2, and it mostly revolves around winrates in the different matchups.
+        I think this is the wrong way to look at it, and I will try to explain why I think so.
+
+    <p>First of all, let's look at MMR - this is basically the same thing as ELO rating, commonly used in chess.
+        Given enough time, and enough consistency in player skill, the MMR rating will stabilize and become a good indicator of
+        relative skill of the total player pool.
+
+    <p>You can think of MMR as function of skill and balance.
+    <pre>mmr = f(skill, race_bonus)</pre>
+
+    <p>Now, we don't know what the function actually looks like, but we don't really have to.
+
+    <p>If the meta game is stable and there are no balance changes, then players will move towards their real MMR (for this particular meta
+        and balance)
+        and then the win-rate will also move towards an equilibrium. Win-rate only changes as a result of external changes (balance
+        patches),
+        where players current MMR no longer reflects their potential MMR.
+
+    <p>So win-rate itself is not very useful on its own. Instead we should look at player skill distribution.
+
+    <p>If we assume that players are evenly distributed across the races with regards to their skill level,
+        we should see an even distribution of MMR as well, assuming we have a good balance.
+
+    <p>This is perhaps not a totally fair assumption, because we also need to consider other factors, such as game enjoyment per race.
+        Even if races would be perfectly balanced, some races might be more frustrating to play and lead to more race switches or quitting
+        the game entirely.
+
+    <h3>The fun stuff</h3>
+    <p>So for fun, I've started to scrape data from the SC2 ladder using the official API's.
+        For each 1v1 ladder, I've gathered player-id, mmr, race and total games played.
+        After running the scraper for a while I ended up with about 150,000 players.
+
+    <p>Once that data is gatherered, it is trivial to generate graphs of various ways of slicing and grouping the data.
+
+    <p>Let's start with the most obvious graph - What is the distribution of MMR per race?
+    I did this as a cumulative graph, since that makes it easier to identify break-even points.
+
+    <p>This means that each point in the graph represent that number of players that have reached this MMR (or higher).
+        One effect of this is that the left-most point represents the total amount of players and the right-most point is no players at all.
+
+    <div id="mmr-by-race" style="width: 60em; margin: auto;"></div>
+    <script src="html/mmr-by-race.js"></script>
+    <script>attachChart("mmr-by-race", "mmr-by-race")</script>
+
+    <p>As we can see here, the distribution of players is slightly uneven.
+        There are more terran than protoss, and more protoss than zerg.
+        Random players are lagging behind a lot, but let's ignore them since the focus is on race balance.
+
+    <p>Even though zerg is the least represented race over all, they are the most represented
+    in the range 2500-5000 MMR - by a large margin up until 3500.
+
+    <p>Let's normalize the graph to account for different population sizes:
+
+    <div id="mmr-by-race-norm" style="width: 60em; margin: auto;"></div>
+    <script src="html/mmr-by-race-norm.js"></script>
+    <script>attachChart("mmr-by-race-norm", "mmr-by-race-norm")</script>
+
+    <p>This doesn't change the zerg dominance, but interestingly enough it affects the random players who now have a similar graph
+    to zerg. The right side of the graph is a bit hard to read, so let's show relative sizes between the races instead.
+
+    <div id="mmr-by-race-norm-rel" style="width: 60em; margin: auto;"></div>
+    <script src="html/mmr-by-race-norm-rel.js"></script>
+    <script>attachChart("mmr-by-race-norm-rel", "mmr-by-race-norm-rel")</script>
+
+    <p>Now it looks like zerg has a clear over-representation all the way up to grandmaster,
+        with terran trailing behind and random disappearing.
+
+
+</div>
+</body>
+</html>
+
