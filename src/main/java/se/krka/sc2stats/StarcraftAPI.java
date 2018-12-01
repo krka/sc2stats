@@ -28,20 +28,12 @@ public class StarcraftAPI {
         LadderSeason.class, url, url, StarcraftAPI::dontReduce);
   }
 
-  public ProfileMetadata getProfileMetadata(final ProfileMetadata profileMetadata) {
-    final int regionId = profileMetadata.getRegionId();
-    final int realmId = profileMetadata.getRealmId();
-    final String profileId = profileMetadata.getProfileId();
-    final String url = "/sc2/metadata/profile/" + regionId + "/" + realmId + "/" + profileId;
-    return blizzardDataSource.getTypedData(ProfileMetadata.class, url, url, StarcraftAPI::dontReduce);
-  }
-
-  public ProfileMetadata getProfileMetadata(final String profileId, final int realm, final int region) {
+  public ProfileMetadata getProfileMetadata(final String profileId, final int region, final int realm) {
     final String url = "/sc2/metadata/profile/" + region + "/" + realm + "/" + profileId;
     return blizzardDataSource.getTypedData(ProfileMetadata.class, url, url, StarcraftAPI::dontReduce);
   }
 
-  public Profile getProfile(final String profileId, final int realm, final int region) {
+  public Profile getProfile(final String profileId, final int region, final int realm) {
     final String url = "/sc2/profile/" + region + "/" + realm + "/" + profileId;
     return blizzardDataSource.getTypedData(Profile.class, url, url, StarcraftAPI::reduceProfile);
   }
@@ -72,7 +64,7 @@ public class StarcraftAPI {
     return modified;
   }
 
-  public LadderSummary getLadderSummary(final String profileId, final int realm, final int region) {
+  public LadderSummary getLadderSummary(final String profileId, final int region, final int realm) {
     final String url = "/sc2/profile/" + region + "/" + realm + "/" + profileId + "/ladder/summary";
     return blizzardDataSource.getTypedData(LadderSummary.class, url, url, StarcraftAPI::reduceLadderSummary);
   }

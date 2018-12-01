@@ -6,6 +6,8 @@ import com.fasterxml.jackson.datatype.guava.GuavaModule;
 import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import com.google.common.base.Charsets;
 import com.google.common.util.concurrent.RateLimiter;
+import com.typesafe.config.Config;
+import com.typesafe.config.ConfigFactory;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -51,6 +53,13 @@ public class BlizzardDataSource implements AutoCloseable {
   private final RateLimiter rateLimiter;
   private final FileCache cache;
 
+  public static BlizzardDataSource create() throws IOException {
+    final Config config = ConfigFactory.parseFile(new File("secrets.yaml"));
+    final String clientId = config.getString("clientid");
+    final String clientSecret = config.getString("clientsecret");
+    return new BlizzardDataSource(clientId, clientSecret);
+  }
+
   public BlizzardDataSource(final String clientId, final String clientSecret) throws IOException {
     this.clientId = clientId;
     this.clientSecret = clientSecret;
@@ -64,7 +73,9 @@ public class BlizzardDataSource implements AutoCloseable {
       accessToken.set(AccessToken.fromFile(accessTokenFile));
     }
 
-    cache = new FileCache(new File("~/.sc2stats-cache"));
+    final String homeDir = System.getProperty("user.home");
+    final File cacheDir = new File(homeDir, ".sc2stats-cache");
+    cache = new FileCache(cacheDir);
 
     // 36,000 per hour -> 10 per second
     rateLimiter = RateLimiter.create(10);
@@ -106,7 +117,7 @@ public class BlizzardDataSource implements AutoCloseable {
     return accessToken.get();
   }
 
-  private void refreshAccesstoken() {
+  public void refreshAccesstoken() {
     accessToken.set(getAccessToken());
   }
 
@@ -127,10 +138,14 @@ public class BlizzardDataSource implements AutoCloseable {
   }
 
   private <T> T getData(final String cacheKey, final String url, final Function<Reader, T> fun, final Consumer<JSONObject> reducer) {
-    return fun.apply(cache.getOrCreate(cacheKey, url, () -> getData(url, reducer)));
+    return fun.apply(cache.getOrCreate(cacheKey, url, () -> getRawData(url, reducer)));
   }
 
-  private String getData(final String url, final Consumer<JSONObject> reducer) {
+  public String getRawData(final String url) {
+    return getRawData(url, jsonObject -> {});
+  }
+
+  public String getRawData(final String url, final Consumer<JSONObject> reducer) {
     long sleepTime = 1000;
     while (true) {
       final AccessToken accessToken = ensureAccessToken();

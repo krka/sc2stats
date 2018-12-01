@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import javax.xml.crypto.Data;
 import org.apache.commons.codec.Charsets;
 import org.apache.commons.io.FileUtils;
 import org.json.JSONArray;
@@ -24,14 +25,17 @@ import org.json.JSONObject;
 public class GraphExporter {
 
   private static final ImmutableMap<String, String> COLORS = ImmutableMap.of(
-      "zerg", "magenta",
+      "zerg", "#990099",
       "terran", "#FF3300",
-      "protoss", "yellow",
+      "protoss", "#FFCC00",
       "random", "gray"
   );
 
   public static void main(String[] args) throws IOException {
     final ImmutableList<DataPoint> datapoints = loadDatapoints();
+    final ImmutableList<DataPoint> noRandom = datapoints.stream()
+            .filter(dataPoint -> !dataPoint.getRace().equals("random"))
+            .collect(ImmutableList.toImmutableList());
 
     final ImmutableList<OffraceDataPoint> offraceData = datapoints.stream()
         .filter(dataPoint -> dataPoint.getGamesPlayed() >= 1000)
@@ -67,27 +71,17 @@ public class GraphExporter {
         .sorted(Comparator.comparing(DataPoint::getGamesPlayed))
         .collect(ImmutableList.toImmutableList());
 
-    Stream<DataPoint> noSmurfs = mainRaceOnly.stream().filter(dataPoint -> dataPoint.getGamesPlayed() >= 1000);
-
-    Stream<DataPoint> newPlayers500 = mainRaceOnly.stream().filter(dataPoint -> dataPoint.getGamesPlayed() <= 500);
-    Stream<DataPoint> newPlayers100 = mainRaceOnly.stream().filter(dataPoint -> dataPoint.getGamesPlayed() <= 100);
-
     ImmutableList.Builder<Chart> charts = ImmutableList.builder();
-    charts.addAll(createCumulativeCharts("retention-by-race", groupByRace(retention, DataPoint::getGamesPlayed),
-        "Retention by race", "Games played", "players", DataPoint::getGamesPlayed));
-    charts.addAll(createCumulativeCharts("mmr-by-race", groupByRace(datapoints, DataPoint::getMmr),
-        "MMR by race", "MMR", "players", DataPoint::getMmr));
-    charts.addAll(createCumulativeCharts("mmr-by-race-mainrace", groupByRace(mainRaceOnly, DataPoint::getMmr),
-        "MMR by race, main race only", "MMR", "players", DataPoint::getMmr));
-    charts.addAll(createCumulativeCharts("mmr-by-race-no-smurfs", groupByRace(noSmurfs, DataPoint::getMmr),
-        "MMR by race, main race only, no smurfs (>= 1000 games played)", "MMR", "players",
-        DataPoint::getMmr));
-    charts.addAll(createCumulativeCharts("mmr-by-race-new-players", groupByRace(newPlayers500, DataPoint::getMmr),
-        "MMR by race, main race only, <= 500 games played", "MMR", "players",
-        DataPoint::getMmr));
-    charts.addAll(createCumulativeCharts("mmr-by-race-very-new-players", groupByRace(newPlayers100, DataPoint::getMmr),
-        "MMR by race, main race only, <= 100 games played", "MMR", "players",
-        DataPoint::getMmr));
+    charts.addAll(createCumulativeCharts("mmr-by-race", noRandom, "MMR by race", "MMR", "players",
+        DataPoint::getMmr, DataPoint::getRace, Function.identity(), GraphExporter::raceColor));
+    charts.addAll(createCumulativeCharts("mmr-by-race-mainrace", mainRaceOnly, "MMR by race, main race only", "MMR", "players",
+        DataPoint::getMmr, DataPoint::getRace, Function.identity(), GraphExporter::raceColor));
+
+    charts.addAll(createCumulativeCharts("mmr-by-games-played", noRandom, "MMR by games-played", "MMR", "players",
+        DataPoint::getMmr, GamesPlayedGroup::forDatapoint, g -> g.name, g -> g.color));
+
+    charts.addAll(createCumulativeCharts("mmr-by-race-and-games-played", noRandom, "MMR by race and games-played", "MMR", "players",
+        DataPoint::getMmr, GamesPlayedByRace::forDatapoint, g -> g.name, g -> g.color));
 
     charts.add(createOffraceCountChart("offrace-count-by-main", offRacesByMain, "Cumulative amount of off-races by main race"));
     charts.add(createOffraceCountChart("offrace-count-by-off", offRacesByOffrace, "Cumulative amount of off-races by off-race"));
@@ -95,19 +89,121 @@ public class GraphExporter {
     charts.add(createOffraceChart("offrace-mmr-by-main", offRacesByMain, "MMR diff for off-races by main race"));
     charts.add(createOffraceChart("offrace-mmr-by-off", offRacesByOffrace, "MMR diff for off-races by off-race"));
     charts.add(createOffraceChart("offrace-mmr", specificOffRaces, "MMR diff for off-races by pairs"));
+
+    charts.addAll(createCumulativeCharts("retention-by-race", retention,
+        "Retention by race", "Games played", "players",
+        DataPoint::getGamesPlayed, DataPoint::getRace, Function.identity(), GraphExporter::raceColor));
+
     generateJavascript(charts.build());
   }
 
-  private static Map<String, List<DataPoint>> groupByRace(final ImmutableList<DataPoint> datapoints,
-                                                          final Function<DataPoint, Integer> keyFunction) {
-    return groupByRace(datapoints.stream(), keyFunction);
+  private enum GamesPlayedGroup {
+    G100(100, "#00ff00", "<= 100"),
+    G200(200, "#00dd22", "<= 200"),
+    G500(500, "#00bb44", "<= 500"),
+    G1000(1000, "#009966", "<= 1000"),
+    G2000(2000, "#007788", "<= 2000"),
+    G5000(5000, "#0055aa", "<= 5000"),
+    G10000(10000, "#0033cc", "<= 10000"),
+    G20000(20000, "#0011ee", "<= 20000"),
+    MAX(Integer.MAX_VALUE, "#1100ff", "a lot")
+    ;
+    private final int gamesPlayed;
+    private final String color;
+    private final String name;
+
+    GamesPlayedGroup(final int gamesPlayed, final String color, final String name) {
+      this.gamesPlayed = gamesPlayed;
+      this.color = color;
+      this.name = name;
+    }
+
+    static GamesPlayedGroup forDatapoint(final DataPoint dataPoint) {
+      GamesPlayedGroup[] values = GamesPlayedGroup.values();
+      for (GamesPlayedGroup value : values) {
+        if (dataPoint.getGamesPlayed() <= value.gamesPlayed) {
+          return value;
+        }
+      }
+      return GamesPlayedGroup.MAX;
+    }
   }
 
-  private static Map<String, List<DataPoint>> groupByRace(final Stream<DataPoint> stream,
-                                                          final Function<DataPoint, Integer> keyFunction) {
-    return stream
-        .sorted(Comparator.comparing(keyFunction))
-        .collect(Collectors.groupingBy(DataPoint::getRace));
+  private enum GamesPlayedByRace {
+    Z200(200, "#330033", "<= 200", "zerg"),
+    Z1000(1000, "#550055", "<= 1000", "zerg"),
+    Z5000(5000, "#770077", "<= 5000", "zerg"),
+    Z10000(10000, "#990099", "<= 10000", "zerg"),
+    ZMAX(Integer.MAX_VALUE, "#BB00BB", "a lot", "zerg"),
+    T200(200, "#990000", "<= 200", "terran"),
+    T1000(1000, "#BB1100", "<= 1000", "terran"),
+    T5000(5000, "#DD2200", "<= 5000", "terran"),
+    T10000(10000, "#FF3300", "<= 10000", "terran"),
+    TMAX(Integer.MAX_VALUE, "#1100ff", "a lot", "terran"),
+    P200(200, "#778800", "<= 200", "protoss"),
+    P1000(1000, "#999900", "<= 1000", "protoss"),
+    P5000(5000, "#BBAA00", "<= 5000", "protoss"),
+    P10000(10000, "#DDBB00", "<= 10000", "protoss"),
+    PMAX(Integer.MAX_VALUE, "#FFCC00", "a lot", "protoss"),
+        ;
+    private final int gamesPlayed;
+    private final String color;
+    private final String name;
+    private final String race;
+
+    GamesPlayedByRace(final int gamesPlayed, final String color, final String name, final String race) {
+      this.gamesPlayed = gamesPlayed;
+      this.color = color;
+      this.name = name + " - " + race;
+      this.race = race;
+    }
+
+    static GamesPlayedByRace forDatapoint(final DataPoint dataPoint) {
+      GamesPlayedByRace[] values = GamesPlayedByRace.values();
+      for (GamesPlayedByRace value : values) {
+        if (dataPoint.getRace().equals(value.race) && dataPoint.getGamesPlayed() <= value.gamesPlayed) {
+          return value;
+        }
+      }
+      for (GamesPlayedByRace value : values) {
+        if (dataPoint.getRace().equals(value.race)) {
+          return value;
+        }
+      }
+      throw new RuntimeException("Unreachable");
+    }
+  }
+  private static int gamesPlayedGroup(final DataPoint dataPoint) {
+    int gamesPlayed = dataPoint.getGamesPlayed();
+    if (gamesPlayed < 10) {
+      return 10;
+    }
+    if (gamesPlayed < 100) {
+      return 100;
+    }
+    if (gamesPlayed < 200) {
+      return 200;
+    }
+    if (gamesPlayed < 400) {
+      return 400;
+    }
+    if (gamesPlayed < 1000) {
+      return 1000;
+    }
+    if (gamesPlayed < 2000) {
+      return 2000;
+    }
+    if (gamesPlayed < 5000) {
+      return 5000;
+    }
+    if (gamesPlayed < 10000) {
+      return 10000;
+    }
+    return 20000;
+  }
+
+  private static String raceColor(final String race) {
+    return COLORS.get(race);
   }
 
   private static void generateJavascript(final ImmutableList<Chart> charts) throws IOException {
@@ -144,72 +240,79 @@ public class GraphExporter {
     FileUtils.write(output, data, Charsets.UTF_8);
   }
 
-  private static ImmutableList<Chart> createCumulativeCharts(
+  private static <T> ImmutableList<Chart> createCumulativeCharts(
       final String baseName,
-      final Map<String, List<DataPoint>> allByRace,
+      final List<DataPoint> datapoints,
       final String title,
       final String xtitle,
       final String ytitle,
-      final Function<DataPoint, Integer> xFunction) {
+      final Function<DataPoint, Integer> xFunction,
+      final Function<DataPoint, T> groupByFunction,
+      final Function<T, String> seriesNameFunction,
+      final Function<T, String> seriesColorFunction) {
     return ImmutableList.of(
-        createCumulativeChart(baseName, false, false, allByRace, "Cumulative " + title, xtitle, "Number of " + ytitle, xFunction),
-        createCumulativeChart(baseName, true, false, allByRace, "Normalized cumulative " + title, xtitle, "Percentage of " + ytitle,
-            xFunction),
-        createCumulativeChart(baseName, true, true, allByRace, "Relative " + title, xtitle, "Relative value", xFunction)
+        createCumulativeChart(baseName, false, false, datapoints, "Cumulative " + title, xtitle, "Number of " + ytitle,
+            xFunction, groupByFunction, seriesNameFunction, seriesColorFunction),
+        createCumulativeChart(baseName, true, false, datapoints, "Normalized cumulative " + title, xtitle, "Percentage of " + ytitle,
+            xFunction, groupByFunction, seriesNameFunction, seriesColorFunction),
+        createCumulativeChart(baseName, true, true, datapoints, "Relative " + title, xtitle, "Relative value",
+            xFunction, groupByFunction, seriesNameFunction, seriesColorFunction)
     );
   }
 
-  private static Chart createCumulativeChart(
+  private static <T> Chart createCumulativeChart(
       final String baseName,
       final boolean normalized,
       final boolean relative,
-      final Map<String, List<DataPoint>> allByRace,
+      final List<DataPoint> datapoints,
       final String title,
       final String xtitle,
       final String ytitle,
-      final Function<DataPoint, Integer> xFunction) {
-    int minValue = allByRace.values().stream()
-        .flatMap(Collection::stream)
+      final Function<DataPoint, Integer> xFunction,
+      final Function<DataPoint, T> groupByFunction,
+      final Function<T, String> seriesNameFunction,
+      final Function<T, String> seriesColorFunction) {
+    int minValue = datapoints.stream()
         .map(xFunction)
         .min(Integer::compareTo).get();
-    int maxValue = allByRace.values().stream()
-        .flatMap(Collection::stream)
+    int maxValue = datapoints.stream()
         .map(xFunction)
         .max(Integer::compareTo).get();
 
     int bucketSize = Math.max(1, (maxValue - minValue) / 100);
 
-
     JSONArray allSeries = new JSONArray();
 
+    final Map<T, List<DataPoint>> grouped = datapoints.stream().collect(Collectors.groupingBy(groupByFunction));
     int numPartitions = 0;
-    for (Map.Entry<String, List<DataPoint>> entry : allByRace.entrySet()) {
-      final String race = entry.getKey();
+    for (Map.Entry<T, List<DataPoint>> entry : grouped.entrySet()) {
+      final T group = entry.getKey();
       List<DataPoint> dataPoints = entry.getValue();
-      List<List<DataPoint>> partitioned = Util.partitionByKey(dataPoints, minValue, bucketSize, xFunction);
-
-      int bucket = minValue;
-
-      JSONArray xvalues = new JSONArray();
-      JSONArray yvalues = new JSONArray();
-
       int total = dataPoints.size();
-      int playersSeen = 0;
-      final double factor = normalized ? 100.0 / total : 1.0;
+      List<Integer> cumulative = Util.cumulativeByKey(dataPoints, minValue, bucketSize, xFunction);
 
-      xvalues.put(bucket);
-      yvalues.put((total - playersSeen) * factor);
+        int bucket = minValue;
 
-      for (List<DataPoint> partition : partitioned) {
-        playersSeen += partition.size();
-        bucket += bucketSize;
+        JSONArray xvalues = new JSONArray();
+        JSONArray yvalues = new JSONArray();
+
+        int playersSeen = 0;
+        final double factor = normalized ? 100.0 / total : 1.0;
 
         xvalues.put(bucket);
         yvalues.put((total - playersSeen) * factor);
-      }
-      numPartitions = Math.max(numPartitions, xvalues.length());
 
-      allSeries.put(newSeries(race, COLORS.get(race), "lines", xvalues, yvalues));
+        for (int count: cumulative) {
+          playersSeen += count;
+          bucket += bucketSize;
+
+          xvalues.put(bucket);
+          yvalues.put((total - playersSeen) * factor);
+        }
+        numPartitions = Math.max(numPartitions, xvalues.length());
+
+        final String seriesName = seriesNameFunction.apply(group);
+        allSeries.put(newSeries(seriesName, seriesColorFunction.apply(group), "lines", xvalues, yvalues));
     }
 
     if (relative) {
