@@ -25,10 +25,10 @@ import org.json.JSONObject;
 public class GraphExporter {
 
   private static final ImmutableMap<String, String> COLORS = ImmutableMap.of(
-      "zerg", "#990099",
-      "terran", "#FF3300",
-      "protoss", "#FFCC00",
-      "random", "gray"
+      "Zerg", "#990099",
+      "Terran", "#FF3300",
+      "Protoss", "#FFCC00",
+      "Random", "gray"
   );
 
   public static void main(String[] args) throws IOException {
