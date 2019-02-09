@@ -5,9 +5,9 @@
     <title>Starcraft II statistics</title>
     <!-- Plotly.js -->
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-    <script src="html/charthelper.js"></script>
+    <script src="ladder/2019-02-09T150115.412389700Z/Europe/html/charthelper.js"></script>
     <style>
-        p { font-family: sans-serif; }
+        p { font-family: sans-serif; font: Arial; }
 
     </style>
 </head>
@@ -46,19 +46,20 @@
 
     <h3>The fun stuff</h3>
     <p>So for fun, I've started to scrape data from the SC2 ladder using the official API's.
-        For each 1v1 ladder, I've gathered player-id, mmr, race and total games played.
-        After running the scraper for a while I ended up with about 150,000 players.
+        For each 1v1 ladder, I've gathered player-id, mmr and race. There are currently about 20,000 players in Korea,
+        60,000 in US and 70,000 in Europe. The current data was gathered at 2019-02-09.
 
-    <p>Once that data is gatherered, it is trivial to generate graphs of various ways of slicing and grouping the data.
+    <p>Once that data is gathered, it is trivial to generate graphs of various ways of slicing and grouping the data.
 
     <p>Let's start with the most obvious graph - What is the distribution of MMR per race?
     I did this as a cumulative graph, since that makes it easier to identify break-even points.
 
     <p>This means that each point in the graph represent that number of players that have reached this MMR (or higher).
-        One effect of this is that the left-most point represents the total amount of players and the right-most point is no players at all.
+       One effect of this is that the left-most point represents the total amount of players and the right-most point is no players at all.
+       (I am using data from Europe here)
 
     <div id="mmr-by-race" style="width: 60em; margin: auto;"></div>
-    <script src="html/mmr-by-race.js"></script>
+    <script src="ladder/2019-02-09T150115.412389700Z/Europe/html/mmr-by-race.js"></script>
     <script>attachChart("mmr-by-race", "mmr-by-race")</script>
 
     <p>As we can see here, the distribution of players is slightly uneven.
@@ -71,24 +72,28 @@
     <p>Let's normalize the graph to account for different population sizes:
 
     <div id="mmr-by-race-norm" style="width: 60em; margin: auto;"></div>
-    <script src="html/mmr-by-race-norm.js"></script>
+    <script src="ladder/2019-02-09T150115.412389700Z/Europe/html/mmr-by-race-norm.js"></script>
     <script>attachChart("mmr-by-race-norm", "mmr-by-race-norm")</script>
 
     <p>This doesn't change the zerg dominance, but interestingly enough it affects the random players who now have a similar graph
     to zerg. The right side of the graph is a bit hard to read, so let's show relative sizes between the races instead.
 
     <div id="mmr-by-race-norm-rel" style="width: 60em; margin: auto;"></div>
-    <script src="html/mmr-by-race-norm-rel.js"></script>
+    <script src="ladder/2019-02-09T150115.412389700Z/Europe/html/mmr-by-race-norm-rel.js"></script>
     <script>attachChart("mmr-by-race-norm-rel", "mmr-by-race-norm-rel")</script>
 
-    <p>Now it looks like zerg has a clear over-representation all the way up to grandmaster,
-        with terran trailing behind and random disappearing.
+    <p>Now it looks like zerg has a clear over-representation all the way up to 5300 MMR, where protoss catches up.
+       Terran however seems to be trailing behind.
 
     <h3>Other graphs</h3>
+    <p>
     I tried finding more interesting data given other ways of looking at the data, but didn't find anything interesting enough.
     For instance, perhaps the data would look different if you filtered away all off-races, or only looking a new or old players.
 
-    If you want to dig deeper, <a href="html/allcharts.html">here's the current set of graphs I've made</a>.
+    <p>If you want to dig deeper, go here for all the graphs. They are organized by region:
+        <a href="ladder/2019-02-09T150115.412389700Z/US/html/allcharts.html">US</a>,
+        <a href="ladder/2019-02-09T150115.412389700Z/Europe/html/allcharts.html">Europe</a>,
+        <a href="ladder/2019-02-09T150115.412389700Z/Korea/html/allcharts.html">Korea</a>
 
     <h3>Source code</h3>
     <p>Source could can be found at <a href="https://github.com/krka/sc2stats">github.com/krka/sc2stats</a>.
