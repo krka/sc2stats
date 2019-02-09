@@ -16,7 +16,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import javax.xml.crypto.Data;
+
 import org.apache.commons.codec.Charsets;
 import org.apache.commons.io.FileUtils;
 import org.json.JSONArray;
@@ -32,56 +32,64 @@ public class GraphExporter {
   );
 
   public static void main(String[] args) throws IOException {
-    final ImmutableList<DataPoint> datapoints = loadDatapoints();
+    File dir = new File("ladder");
+    scan(dir);
+  }
+
+  private static void scan(File dir) throws IOException {
+    for (File child : dir.listFiles()) {
+      if (child.getName().equals("datapoints.csv")) {
+        final File outputDir = new File(dir, "html");
+        if (!outputDir.exists()) {
+          generate(child, outputDir);
+        }
+
+      } else if (child.isDirectory()) {
+        scan(child);
+      }
+    }
+  }
+
+  private static void generate(File input, File outputDir) throws IOException {
+    final ImmutableList<DataPoint> datapoints = loadDatapoints(input);
     final ImmutableList<DataPoint> noRandom = datapoints.stream()
             .filter(dataPoint -> !dataPoint.getRace().equals("random"))
             .collect(ImmutableList.toImmutableList());
 
     final ImmutableList<OffraceDataPoint> offraceData = datapoints.stream()
-        .filter(dataPoint -> dataPoint.getGamesPlayed() >= 1000)
-        .collect(Collectors.groupingBy(DataPoint::getPlayerId))
-        .entrySet().stream()
-        .flatMap(entry -> {
-          final DataPoint mainPoint = entry.getValue().stream().max(Comparator.comparing(DataPoint::getMmr)).get();
-          return entry.getValue().stream().filter(p -> p != mainPoint).map(
-              point -> new OffraceDataPoint(mainPoint.getRace(), mainPoint.getMmr(), point.getRace(), point.getMmr())
-          );
-        })
-        .sorted(Comparator.comparing(OffraceDataPoint::getMainMmr).thenComparing(OffraceDataPoint::getOffMmr))
-        .collect(ImmutableList.toImmutableList());
+            .collect(Collectors.groupingBy(DataPoint::getPlayerId))
+            .entrySet().stream()
+            .flatMap(entry -> {
+              final DataPoint mainPoint = entry.getValue().stream().max(Comparator.comparing(DataPoint::getMmr)).get();
+              return entry.getValue().stream().filter(p -> p != mainPoint).map(
+                      point -> new OffraceDataPoint(mainPoint.getRace(), mainPoint.getMmr(), point.getRace(), point.getMmr())
+              );
+            })
+            .sorted(Comparator.comparing(OffraceDataPoint::getMainMmr).thenComparing(OffraceDataPoint::getOffMmr))
+            .collect(ImmutableList.toImmutableList());
 
     final Map<String, List<OffraceDataPoint>> offRacesByMain = offraceData.stream()
-        .collect(Collectors.groupingBy(p -> p.getMainRace() + "->any"));
+            .collect(Collectors.groupingBy(p -> p.getMainRace() + "->any"));
 
     final Map<String, List<OffraceDataPoint>> offRacesByOffrace = offraceData.stream()
-        .collect(Collectors.groupingBy(p -> "any->" + p.getOffRace()));
+            .collect(Collectors.groupingBy(p -> "any->" + p.getOffRace()));
 
     final Map<String, List<OffraceDataPoint>> specificOffRaces = offraceData.stream()
-        .collect(Collectors.groupingBy(p -> p.getMainRace() + "->" + p.getOffRace()));
+            .collect(Collectors.groupingBy(p -> p.getMainRace() + "->" + p.getOffRace()));
 
     final ImmutableList<DataPoint> mainRaceOnly = datapoints.stream()
-        .collect(Collectors.groupingBy(DataPoint::getPlayerId))
-        .entrySet().stream()
-        .flatMap(entry -> entry.getValue().stream()
-            .max(Comparator.comparing(DataPoint::getMmr))
-            .map(Stream::of).orElseGet(Stream::empty))
-        .collect(ImmutableList.toImmutableList());
-
-    final ImmutableList<DataPoint> retention = mainRaceOnly.stream()
-        .sorted(Comparator.comparing(DataPoint::getGamesPlayed))
-        .collect(ImmutableList.toImmutableList());
+            .collect(Collectors.groupingBy(DataPoint::getPlayerId))
+            .entrySet().stream()
+            .flatMap(entry -> entry.getValue().stream()
+                    .max(Comparator.comparing(DataPoint::getMmr))
+                    .map(Stream::of).orElseGet(Stream::empty))
+            .collect(ImmutableList.toImmutableList());
 
     ImmutableList.Builder<Chart> charts = ImmutableList.builder();
     charts.addAll(createCumulativeCharts("mmr-by-race", noRandom, "MMR by race", "MMR", "players",
-        DataPoint::getMmr, DataPoint::getRace, Function.identity(), GraphExporter::raceColor));
+            DataPoint::getMmr, DataPoint::getRace, Function.identity(), GraphExporter::raceColor));
     charts.addAll(createCumulativeCharts("mmr-by-race-mainrace", mainRaceOnly, "MMR by race, main race only", "MMR", "players",
-        DataPoint::getMmr, DataPoint::getRace, Function.identity(), GraphExporter::raceColor));
-
-    charts.addAll(createCumulativeCharts("mmr-by-games-played", noRandom, "MMR by games-played", "MMR", "players",
-        DataPoint::getMmr, GamesPlayedGroup::forDatapoint, g -> g.name, g -> g.color));
-
-    charts.addAll(createCumulativeCharts("mmr-by-race-and-games-played", noRandom, "MMR by race and games-played", "MMR", "players",
-        DataPoint::getMmr, GamesPlayedByRace::forDatapoint, g -> g.name, g -> g.color));
+            DataPoint::getMmr, DataPoint::getRace, Function.identity(), GraphExporter::raceColor));
 
     charts.add(createOffraceCountChart("offrace-count-by-main", offRacesByMain, "Cumulative amount of off-races by main race"));
     charts.add(createOffraceCountChart("offrace-count-by-off", offRacesByOffrace, "Cumulative amount of off-races by off-race"));
@@ -90,124 +98,15 @@ public class GraphExporter {
     charts.add(createOffraceChart("offrace-mmr-by-off", offRacesByOffrace, "MMR diff for off-races by off-race"));
     charts.add(createOffraceChart("offrace-mmr", specificOffRaces, "MMR diff for off-races by pairs"));
 
-    charts.addAll(createCumulativeCharts("retention-by-race", retention,
-        "Retention by race", "Games played", "players",
-        DataPoint::getGamesPlayed, DataPoint::getRace, Function.identity(), GraphExporter::raceColor));
-
-    generateJavascript(charts.build());
-  }
-
-  private enum GamesPlayedGroup {
-    G100(100, "#00ff00", "<= 100"),
-    G200(200, "#00dd22", "<= 200"),
-    G500(500, "#00bb44", "<= 500"),
-    G1000(1000, "#009966", "<= 1000"),
-    G2000(2000, "#007788", "<= 2000"),
-    G5000(5000, "#0055aa", "<= 5000"),
-    G10000(10000, "#0033cc", "<= 10000"),
-    G20000(20000, "#0011ee", "<= 20000"),
-    MAX(Integer.MAX_VALUE, "#1100ff", "a lot")
-    ;
-    private final int gamesPlayed;
-    private final String color;
-    private final String name;
-
-    GamesPlayedGroup(final int gamesPlayed, final String color, final String name) {
-      this.gamesPlayed = gamesPlayed;
-      this.color = color;
-      this.name = name;
-    }
-
-    static GamesPlayedGroup forDatapoint(final DataPoint dataPoint) {
-      GamesPlayedGroup[] values = GamesPlayedGroup.values();
-      for (GamesPlayedGroup value : values) {
-        if (dataPoint.getGamesPlayed() <= value.gamesPlayed) {
-          return value;
-        }
-      }
-      return GamesPlayedGroup.MAX;
-    }
-  }
-
-  private enum GamesPlayedByRace {
-    Z200(200, "#330033", "<= 200", "zerg"),
-    Z1000(1000, "#550055", "<= 1000", "zerg"),
-    Z5000(5000, "#770077", "<= 5000", "zerg"),
-    Z10000(10000, "#990099", "<= 10000", "zerg"),
-    ZMAX(Integer.MAX_VALUE, "#BB00BB", "a lot", "zerg"),
-    T200(200, "#990000", "<= 200", "terran"),
-    T1000(1000, "#BB1100", "<= 1000", "terran"),
-    T5000(5000, "#DD2200", "<= 5000", "terran"),
-    T10000(10000, "#FF3300", "<= 10000", "terran"),
-    TMAX(Integer.MAX_VALUE, "#1100ff", "a lot", "terran"),
-    P200(200, "#778800", "<= 200", "protoss"),
-    P1000(1000, "#999900", "<= 1000", "protoss"),
-    P5000(5000, "#BBAA00", "<= 5000", "protoss"),
-    P10000(10000, "#DDBB00", "<= 10000", "protoss"),
-    PMAX(Integer.MAX_VALUE, "#FFCC00", "a lot", "protoss"),
-        ;
-    private final int gamesPlayed;
-    private final String color;
-    private final String name;
-    private final String race;
-
-    GamesPlayedByRace(final int gamesPlayed, final String color, final String name, final String race) {
-      this.gamesPlayed = gamesPlayed;
-      this.color = color;
-      this.name = name + " - " + race;
-      this.race = race;
-    }
-
-    static GamesPlayedByRace forDatapoint(final DataPoint dataPoint) {
-      GamesPlayedByRace[] values = GamesPlayedByRace.values();
-      for (GamesPlayedByRace value : values) {
-        if (dataPoint.getRace().equals(value.race) && dataPoint.getGamesPlayed() <= value.gamesPlayed) {
-          return value;
-        }
-      }
-      for (GamesPlayedByRace value : values) {
-        if (dataPoint.getRace().equals(value.race)) {
-          return value;
-        }
-      }
-      throw new RuntimeException("Unreachable");
-    }
-  }
-  private static int gamesPlayedGroup(final DataPoint dataPoint) {
-    int gamesPlayed = dataPoint.getGamesPlayed();
-    if (gamesPlayed < 10) {
-      return 10;
-    }
-    if (gamesPlayed < 100) {
-      return 100;
-    }
-    if (gamesPlayed < 200) {
-      return 200;
-    }
-    if (gamesPlayed < 400) {
-      return 400;
-    }
-    if (gamesPlayed < 1000) {
-      return 1000;
-    }
-    if (gamesPlayed < 2000) {
-      return 2000;
-    }
-    if (gamesPlayed < 5000) {
-      return 5000;
-    }
-    if (gamesPlayed < 10000) {
-      return 10000;
-    }
-    return 20000;
+    generateJavascript(outputDir, charts.build());
   }
 
   private static String raceColor(final String race) {
     return COLORS.get(race);
   }
 
-  private static void generateJavascript(final ImmutableList<Chart> charts) throws IOException {
-    copyResource("charthelper.js", new File("html/charthelper.js"));
+  private static void generateJavascript(File outputDir, final ImmutableList<Chart> charts) throws IOException {
+    copyResource("charthelper.js", new File(outputDir,"charthelper.js"));
 
     final URL resource = Resources.getResource("charttemplate.html");
     final String template = Resources.toString(resource, Charsets.UTF_8);
@@ -219,17 +118,17 @@ public class GraphExporter {
           chart.filename, chart.title, chart.xtitle, chart.ytitle, chart.series.toString(2));
       final String jsFilename = chart.filename + ".js";
       final String htmlFilename = chart.filename + ".html";
-      FileUtils.write(new File("html/" + jsFilename), data, Charsets.UTF_8);
+      FileUtils.write(new File(outputDir, jsFilename), data, Charsets.UTF_8);
 
       String include = String.format("<script src=\"%s\"></script>\n<script>attachChart(\"charts\", \"%s\")</script>",
           jsFilename, chart.filename);
       allIncludes.add(include);
       String html = template.replace("<!--INCLUDE_JS-->", include);
-      FileUtils.write(new File("html/" + htmlFilename), html, Charsets.UTF_8);
+      FileUtils.write(new File(outputDir, htmlFilename), html, Charsets.UTF_8);
     }
 
     FileUtils.write(
-        new File("html/allcharts.html"),
+        new File(outputDir, "allcharts.html"),
         template.replace("<!--INCLUDE_JS-->", Joiner.on('\n').join(allIncludes.build())),
         Charsets.UTF_8);
   }
@@ -443,10 +342,9 @@ public class GraphExporter {
     return new Chart(filename, allSeries, title, "Main MMR", "Offrace MMR diff");
   }
 
-  private static ImmutableList<DataPoint> loadDatapoints() throws IOException {
+  private static ImmutableList<DataPoint> loadDatapoints(File input) throws IOException {
     ImmutableList.Builder<DataPoint> builder = ImmutableList.builder();
 
-    final File input = new File("datapoints.csv");
     try (final BufferedReader reader = new BufferedReader(Util.fileReader(input))) {
       while (true) {
         final String line = reader.readLine();
@@ -456,10 +354,9 @@ public class GraphExporter {
         final List<String> parts = Splitter.on(',').splitToList(line);
         final int mmr = Integer.parseInt(parts.get(0));
         if (mmr > 0) {
-          final int gamesPlayed = Integer.parseInt(parts.get(1));
-          final String race = parts.get(2);
-          final String playerId = parts.get(3);
-          builder.add(new DataPoint(race, playerId, mmr, gamesPlayed));
+          final String race = parts.get(1);
+          final String playerId = parts.get(2);
+          builder.add(new DataPoint(race, playerId, mmr));
         }
       }
     }
@@ -489,13 +386,11 @@ public class GraphExporter {
     private final String race;
     private final String playerId;
     private final int mmr;
-    private final int gamesPlayed;
 
-    private DataPoint(final String race, final String playerId, final int mmr, final int gamesPlayed) {
+    private DataPoint(final String race, final String playerId, final int mmr) {
       this.race = race;
       this.playerId = playerId;
       this.mmr = mmr;
-      this.gamesPlayed = gamesPlayed;
     }
 
     private String getRace() {
@@ -508,10 +403,6 @@ public class GraphExporter {
 
     private int getMmr() {
       return mmr;
-    }
-
-    private int getGamesPlayed() {
-      return gamesPlayed;
     }
   }
 

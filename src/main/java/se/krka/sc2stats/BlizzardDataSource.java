@@ -8,11 +8,8 @@ import com.google.common.base.Charsets;
 import com.google.common.util.concurrent.RateLimiter;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.Reader;
-import java.io.StringWriter;
+
+import java.io.*;
 import java.net.SocketException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -40,89 +37,34 @@ public class BlizzardDataSource implements AutoCloseable {
       .registerModule(new GuavaModule())
       .registerModule(new Jdk8Module());
 
-  private final HttpHost apiHost = new HttpHost("eu.api.blizzard.com", 443, "https");
-  private final HttpHost accessTokenHost = new HttpHost("us.battle.net", 443, "https");
+  private final HttpHost apiHost;
 
   private final CloseableHttpClient client;
 
-  private final String clientId;
-  private final String clientSecret;
-  private final File accessTokenFile;
-
-  private final AtomicReference<AccessToken> accessToken = new AtomicReference<>(new AccessToken());
+  private final Region region;
+  private final BlizzardOAuth blizzardOAuth;
   private final RateLimiter rateLimiter;
-  private final FileCache cache;
 
-  public static BlizzardDataSource create() throws IOException {
-    final Config config = ConfigFactory.parseFile(new File("secrets.yaml"));
-    final String clientId = config.getString("clientid");
-    final String clientSecret = config.getString("clientsecret");
-    return new BlizzardDataSource(clientId, clientSecret);
+  public static BlizzardDataSource create(final Region region, BlizzardOAuth blizzardOAuth) throws IOException {
+    return new BlizzardDataSource(region, blizzardOAuth);
   }
 
-  public BlizzardDataSource(final String clientId, final String clientSecret) throws IOException {
-    this.clientId = clientId;
-    this.clientSecret = clientSecret;
+  public BlizzardDataSource(Region region, BlizzardOAuth blizzardOAuth) {
+    this.apiHost = new HttpHost(region.getApiHost(), 443, "https");
+    this.region = region;
+    this.blizzardOAuth = blizzardOAuth;
+
     client = HttpClients.custom()
-        .setMaxConnPerRoute(100)
-        .setMaxConnTotal(100)
-        .build();
-
-    accessTokenFile = new File("accesstoken.json");
-    if (accessTokenFile.exists()) {
-      accessToken.set(AccessToken.fromFile(accessTokenFile));
-    }
-
-    final String homeDir = System.getProperty("user.home");
-    final File cacheDir = new File(homeDir, ".sc2stats-cache");
-    cache = new FileCache(cacheDir);
+            .setMaxConnPerRoute(100)
+            .setMaxConnTotal(100)
+            .build();
 
     // 36,000 per hour -> 10 per second
     rateLimiter = RateLimiter.create(10);
   }
 
-  private AccessToken getAccessToken() {
-    System.out.println("Requesting new access token");
-    final String auth = Base64.encodeBase64String((clientId + ":" + clientSecret).getBytes(Charsets.US_ASCII));
-
-    final HttpPost request = new HttpPost("/oauth/token");
-    request.addHeader("Authorization", "Basic " + auth);
-    request.setEntity(new StringEntity("grant_type=client_credentials", ContentType.APPLICATION_FORM_URLENCODED));
-
-    try (final CloseableHttpResponse response = client.execute(accessTokenHost, request)) {
-      if (response.getStatusLine().getStatusCode() != 200) {
-        throw new RuntimeException(response.getStatusLine().toString());
-      }
-
-      final JSONObject object = new JSONObject(new JSONTokener(response.getEntity().getContent()));
-      final String accessToken = object.getString("access_token");
-      final String tokenType = object.getString("token_type");
-      final long expiresIn = object.getLong("expires_in");
-      final Instant expiration = Instant.now().plus(expiresIn, ChronoUnit.SECONDS);
-      final AccessToken token = new AccessToken(accessToken, tokenType, expiration);
-      token.toFile(accessTokenFile);
-      return token;
-    } catch (IOException e) {
-      throw new RuntimeException(e);
-    }
-  }
-
-  private AccessToken ensureAccessToken() {
-    if (!accessToken.get().isValid()) {
-      refreshAccesstoken();
-    }
-    if (!accessToken.get().isValid()) {
-      throw new RuntimeException("Could not get a new access token");
-    }
-    return accessToken.get();
-  }
-
-  public void refreshAccesstoken() {
-    accessToken.set(getAccessToken());
-  }
-
-  public <T> T getTypedData(final Class<T> clazz, final String cacheKey, final String url, final Consumer<JSONObject> reducer) {
-    return getData(cacheKey, url, content -> readValue(clazz, content), reducer);
+  public <T> T getTypedData(final Class<T> clazz, final String url, final Consumer<JSONObject> reducer) {
+    return getData(url, content -> readValue(clazz, content), reducer);
   }
 
   private <T> T readValue(final Class<T> clazz, final Reader content) {
@@ -133,12 +75,12 @@ public class BlizzardDataSource implements AutoCloseable {
     }
   }
 
-  public JSONObject getUntypedData(final String cacheKey, final String url, final Consumer<JSONObject> reducer) {
-    return getData(cacheKey, url, content -> new JSONObject(new JSONTokener(content)), reducer);
+  public JSONObject getUntypedData(final String url, final Consumer<JSONObject> reducer) {
+    return getData(url, content -> new JSONObject(new JSONTokener(content)), reducer);
   }
 
-  private <T> T getData(final String cacheKey, final String url, final Function<Reader, T> fun, final Consumer<JSONObject> reducer) {
-    return fun.apply(cache.getOrCreate(cacheKey, url, () -> getRawData(url, reducer)));
+  private <T> T getData(final String url, final Function<Reader, T> fun, final Consumer<JSONObject> reducer) {
+    return fun.apply(new StringReader(getRawData(url, reducer)));
   }
 
   public String getRawData(final String url) {
@@ -148,7 +90,7 @@ public class BlizzardDataSource implements AutoCloseable {
   public String getRawData(final String url, final Consumer<JSONObject> reducer) {
     long sleepTime = 1000;
     while (true) {
-      final AccessToken accessToken = ensureAccessToken();
+      final AccessToken accessToken = blizzardOAuth.ensureAccessToken();
 
       rateLimiter.acquire();
 
@@ -167,7 +109,7 @@ public class BlizzardDataSource implements AutoCloseable {
             throw new RuntimeException(e);
           }
         } else if (statusCode == 401) {
-          refreshAccesstoken();
+          blizzardOAuth.refreshAccesstoken();
           // Fall through and try again
         } else if (shouldRetry(statusCode)) {
           final String payload = getResponseString(response);
@@ -242,4 +184,7 @@ public class BlizzardDataSource implements AutoCloseable {
     client.close();
   }
 
+  public Region getRegion() {
+    return region;
+  }
 }

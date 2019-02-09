@@ -1,41 +1,51 @@
 package se.krka.sc2stats;
 
 import org.json.JSONObject;
-import se.krka.sc2stats.model.Ladder;
-import se.krka.sc2stats.model.LadderSeason;
-import se.krka.sc2stats.model.LadderSummary;
-import se.krka.sc2stats.model.Profile;
-import se.krka.sc2stats.model.ProfileMetadata;
-import se.krka.sc2stats.model.Static;
+import se.krka.sc2stats.model.*;
 
 public class StarcraftAPI {
 
   private final BlizzardDataSource blizzardDataSource;
+  private final Region region;
 
   public StarcraftAPI(final BlizzardDataSource blizzardDataSource) {
     this.blizzardDataSource = blizzardDataSource;
+    region = blizzardDataSource.getRegion();
   }
 
-  public Static getStatic(final int region) {
-    final String url = "/sc2/static/profile/" + region;
+  public Static getStatic() {
+    final String url = "/sc2/static/profile/" + region.getRegionId();
     return blizzardDataSource.getTypedData(
-        Static.class, url, url, StarcraftAPI::dontReduce);
+        Static.class, url, StarcraftAPI::dontReduce);
   }
 
-  public LadderSeason getLadderSeason(final int region) {
-    final String url = "/sc2/ladder/season/" + region;
+  public LadderSeason getLadderSeason() {
+    final String url = "/sc2/ladder/season/" + region.getRegionId();
     return blizzardDataSource.getTypedData(
-        LadderSeason.class, url, url, StarcraftAPI::dontReduce);
+        LadderSeason.class, url, StarcraftAPI::dontReduce);
   }
 
-  public ProfileMetadata getProfileMetadata(final String profileId, final int region, final int realm) {
-    final String url = "/sc2/metadata/profile/" + region + "/" + realm + "/" + profileId;
-    return blizzardDataSource.getTypedData(ProfileMetadata.class, url, url, StarcraftAPI::dontReduce);
+  public League getLeague(final int season, final LeagueId leagueId) {
+    String queueId = "201"; // LOTV
+    String type = "0"; // Arranged
+    String url = "/data/sc2/league/" + season + "/" + queueId + "/" + type + "/" + leagueId.getId();
+    return blizzardDataSource.getTypedData(League.class, url, jsonObject -> {});
   }
 
-  public Profile getProfile(final String profileId, final int region, final int realm) {
-    final String url = "/sc2/profile/" + region + "/" + realm + "/" + profileId;
-    return blizzardDataSource.getTypedData(Profile.class, url, url, StarcraftAPI::reduceProfile);
+  public Division getDivision(final int divisionId) {
+    String url = "/data/sc2/ladder/" + divisionId;
+    return blizzardDataSource.getTypedData(Division.class, url, jsonObject -> {});
+
+  }
+
+  public ProfileMetadata getProfileMetadata(final String profileId, final int realm) {
+    final String url = "/sc2/metadata/profile/" + region.getRegionId() + "/" + realm + "/" + profileId;
+    return blizzardDataSource.getTypedData(ProfileMetadata.class, url, StarcraftAPI::dontReduce);
+  }
+
+  public Profile getProfile(final String profileId, final int realm) {
+    final String url = "/sc2/profile/" + region.getRegionId() + "/" + realm + "/" + profileId;
+    return blizzardDataSource.getTypedData(Profile.class, url, StarcraftAPI::reduceProfile);
   }
 
   private static boolean reduceProfile(final JSONObject obj) {
@@ -50,10 +60,10 @@ public class StarcraftAPI {
     return modified;
   }
 
-  public Ladder getLadder(final String profileId, final int realm, final int region, final String ladderId) {
-    final String cacheKey = "/sc2/ladder/" + region + "/" + realm + "/" + ladderId;
-    final String url = "/sc2/profile/" + region + "/" + realm + "/" + profileId + "/ladder/" + ladderId;
-    return blizzardDataSource.getTypedData(Ladder.class, cacheKey, url, StarcraftAPI::reduceLadder);
+  public Ladder getLadder(final String profileId, final int realm, final String ladderId) {
+    final String cacheKey = "/sc2/ladder/" + region.getRegionId() + "/" + realm + "/" + ladderId;
+    final String url = "/sc2/profile/" + region.getRegionId() + "/" + realm + "/" + profileId + "/ladder/" + ladderId;
+    return blizzardDataSource.getTypedData(Ladder.class, url, StarcraftAPI::reduceLadder);
   }
 
   private static boolean reduceLadder(final JSONObject obj) {
@@ -64,9 +74,9 @@ public class StarcraftAPI {
     return modified;
   }
 
-  public LadderSummary getLadderSummary(final String profileId, final int region, final int realm) {
-    final String url = "/sc2/profile/" + region + "/" + realm + "/" + profileId + "/ladder/summary";
-    return blizzardDataSource.getTypedData(LadderSummary.class, url, url, StarcraftAPI::reduceLadderSummary);
+  public LadderSummary getLadderSummary(final String profileId, final int realm) {
+    final String url = "/sc2/profile/" + region.getRegionId() + "/" + realm + "/" + profileId + "/ladder/summary";
+    return blizzardDataSource.getTypedData(LadderSummary.class, url, StarcraftAPI::reduceLadderSummary);
   }
 
   private static boolean reduceLadderSummary(final JSONObject obj) {
@@ -76,9 +86,9 @@ public class StarcraftAPI {
     return modified;
   }
 
-  public Ladder getGrandmaster(final int region) {
-    final String url = "/sc2/ladder/grandmaster/" + region;
-    return blizzardDataSource.getTypedData(Ladder.class, url, url, StarcraftAPI::dontReduce);
+  public Ladder getGrandmaster() {
+    final String url = "/sc2/ladder/grandmaster/" + region.getRegionId();
+    return blizzardDataSource.getTypedData(Ladder.class, url, StarcraftAPI::dontReduce);
   }
 
   private static void dontReduce(JSONObject obj) {

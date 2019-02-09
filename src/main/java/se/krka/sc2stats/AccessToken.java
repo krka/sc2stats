@@ -55,8 +55,6 @@ public class AccessToken {
 
   // Fetch access token
   public static void main(String[] args) throws Exception {
-    try (final BlizzardDataSource dataSource = BlizzardDataSource.create()) {
-      dataSource.refreshAccesstoken();
-    }
+    BlizzardOAuth.create().refreshAccesstoken();
   }
 }
